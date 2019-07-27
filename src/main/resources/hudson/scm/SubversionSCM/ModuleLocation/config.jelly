@@ -38,7 +38,7 @@ THE SOFTWARE.
     }"/>
   </f:entry>
   <f:entry title="${%Credentials}" field="credentialsId">
-    <c:select />
+    <c:select checkMethod="post"/>
   </f:entry>
   <f:entry title="${%Local module directory}" field="local">
     <f:textbox value="${instance!=null?instance.local:'.'}"/>
@@ -49,10 +49,14 @@ THE SOFTWARE.
       <f:option value="empty" selected="${instance.depthOption=='empty'}">empty</f:option>
       <f:option value="files" selected="${instance.depthOption=='files'}">files</f:option>
       <f:option value="immediates" selected="${instance.depthOption=='immediates'}">immediates</f:option>
-      <f:option value="unknown" selected="${instance.depthOption=='unknown'}">as-it-is</f:option>
+      <f:option value="unknown" selected="${instance.depthOption=='unknown'}">as-it-is(checkout depth files)</f:option>
+      <f:option value="as-it-is-infinity" selected="${instance.depthOption=='as-it-is-infinity'}">as-it-is(checkout depth infinity)</f:option>
     </select>
   </f:entry>
   <f:entry title="${%Ignore externals}" field="ignoreExternalsOption">
+    <f:checkbox default="true"/>
+  </f:entry>
+  <f:entry title="${%Cancel process on externals fail}" field="cancelProcessOnExternalsFail">
     <f:checkbox default="true"/>
   </f:entry>
   <f:entry>

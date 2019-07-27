@@ -1,10 +1,12 @@
 Jenkins Subversion Plugin
 =========================
 
-[![Build Status](https://jenkins.ci.cloudbees.com/buildStatus/icon?job=plugins/subversion-plugin)](https://jenkins.ci.cloudbees.com/job/plugins/job/subversion-plugin/)
+[![Jenkins Plugin](https://img.shields.io/jenkins/plugin/v/subversion.svg)](https://plugins.jenkins.io/subversion)
+[![GitHub release](https://img.shields.io/github/release/jenkinsci/subversion-plugin.svg?label=release)](https://github.com/jenkinsci/subversion-plugin/releases/latest)
+[![Jenkins Plugin Installs](https://img.shields.io/jenkins/plugin/i/subversion.svg?color=blue)](https://plugins.jenkins.io/subversion)
 
 Provides Jenkins integration with [Apache Subversion](http://subversion.apache.org/).
 
-See [Subversion Plugin](https://wiki.jenkins-ci.org/display/JENKINS/Subversion+Plugin) on the Jenkins Wiki for more information.
+See the [Subversion Plugin page](https://plugins.jenkins.io/subversion) for more information.
 
 Apache, Apache Subversion and Subversion are trademarks of the Apache Software Foundation.

@@ -5,8 +5,12 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import hudson.scm.subversion.UpdateUpdater;
-import org.jvnet.hudson.test.Bug;
+import org.junit.After;
+import static org.junit.Assert.*;
+import org.junit.Before;
+import org.junit.Test;
 import org.jvnet.hudson.test.HudsonHomeLoader.CopyExisting;
+import org.jvnet.hudson.test.Issue;
 import org.tmatesoft.svn.core.*;
 import org.tmatesoft.svn.core.io.SVNRepository;
 import org.tmatesoft.svn.core.wc.SVNClientManager;
@@ -22,27 +26,25 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
     @SuppressWarnings("unchecked")
     Set<String> noUsers = Collections.EMPTY_SET;
     SVNRepository svnRepo;
-    
+
+    @Before
     public void setUp() throws Exception {
-        super.setUp();
         File repo = new CopyExisting(DefaultSVNLogFilter.class.getResource("JENKINS-10449.zip")).allocate();
         SVNURL svnUrl = SVNURL.fromFile(repo);
         SVNClientManager svnMgr = SVNClientManager.newInstance();
         svnRepo = svnMgr.createRepository(svnUrl, false);
     }
-    
+
+    @After
     public void tearDown() throws Exception {
         svnRepo = null;
-        super.tearDown();
     }
     
     private List<SVNLogEntry> doFilter(final SVNLogFilter logFilter) throws SVNException {
-        final List<SVNLogEntry> log = new ArrayList<SVNLogEntry>();
-        ISVNLogEntryHandler logGatherer = new ISVNLogEntryHandler() {
-            public void handleLogEntry(SVNLogEntry logEntry) throws SVNException {
-                if (logFilter.isIncluded(logEntry)) {
-                    log.add(logEntry);
-                }
+        final List<SVNLogEntry> log = new ArrayList<>();
+        ISVNLogEntryHandler logGatherer = logEntry -> {
+            if (logFilter.isIncluded(logEntry)) {
+                log.add(logEntry);
             }
         };
         svnRepo.log(empty, 1, 5, true, false, logGatherer);
@@ -50,7 +52,7 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
     }
     
     private static Pattern [] compile(String ... regexes) {
-        List<Pattern> patterns = new ArrayList<Pattern>();
+        List<Pattern> patterns = new ArrayList<>();
         for (String re : regexes) {
             patterns.add(Pattern.compile(re));
         }
@@ -69,8 +71,9 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         }
         return true;
     }
-    
-    public void testNoExcludes() throws Exception {
+
+    @Test
+    public void noExcludes() throws Exception {
         
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, noPatterns, noUsers, null, noPatterns, false);
         assertTrue(!filter.hasExclusionRule());
@@ -79,7 +82,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 2, 3, 4, 5));
     }
     
-    public void testExcludes() throws Exception {
+    @Test
+    public void excludes() throws Exception {
         Pattern [] excludes = compile("/z.*");
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(excludes, noPatterns, noUsers, null, noPatterns, false);
 
@@ -89,7 +93,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 4));
     }
     
-    public void testIncludes() throws Exception {
+    @Test
+    public void includes() throws Exception {
         Pattern [] includes = compile("/z.*");
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, includes, noUsers, null, noPatterns, false);
         
@@ -99,7 +104,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 2, 3, 5));
     }
     
-    public void testBothIncludesAndExcludes() throws Exception {
+    @Test
+    public void bothIncludesAndExcludes() throws Exception {
         Pattern [] includes = compile("/z.*");
         Pattern [] excludes = compile("/z/a.*");
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(excludes, includes, noUsers, null, noPatterns, false);
@@ -110,8 +116,9 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 2, 5));
     }
     
-    public void testExcludedUsers() throws Exception {
-        Set<String> users = new HashSet<String>();
+    @Test
+    public void excludedUsers() throws Exception {
+        Set<String> users = new HashSet<>();
         users.add("brent");
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, noPatterns, users, null, noPatterns, false);
         
@@ -121,7 +128,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 2, 3, 4));
     }
     
-    public void testExcludedRevProp() throws Exception {
+    @Test
+    public void excludedRevProp() throws Exception {
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, noPatterns, noUsers, "ignoreme", noPatterns, false);
         
         assertTrue(filter.hasExclusionRule());
@@ -130,7 +138,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 2, 3, 4));
     }
     
-    public void testExcludedCommitMessages() throws Exception {
+    @Test
+    public void excludedCommitMessages() throws Exception {
         Pattern [] excludes = compile(".*pinned.*");
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, noPatterns, noUsers, null, excludes, false);
         
@@ -140,7 +149,8 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 2, 3, 5));
     }
     
-    public void testExcludedDirPropChanges() throws Exception {
+    @Test
+    public void excludedDirPropChanges() throws Exception {
         DefaultSVNLogFilter filter = new DefaultSVNLogFilter(noPatterns, noPatterns, noUsers, null, noPatterns, true);
         
         assertTrue(filter.hasExclusionRule());
@@ -149,8 +159,9 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         assertTrue(containsRevs(entries, 1, 2, 3));
     }
 
-    @Bug(18099)
-    public void testGlobalExclusionRevprop() throws Exception {
+    @Issue("JENKINS-18099")
+    @Test
+    public void globalExclusionRevprop() throws Exception {
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList(new SubversionSCM.ModuleLocation("file://some/repo", ".")),
                 new UpdateUpdater(), null, null, null, null, null, null, false);
@@ -159,7 +170,7 @@ public class DefaultSVNLogFilterTest extends AbstractSubversionTest {
         SVNProperties p = new SVNProperties();
         p.put("ignoreme", "*");
 
-        Map<String, SVNLogEntryPath> paths = new HashMap<String, SVNLogEntryPath>();
+        Map<String, SVNLogEntryPath> paths = new HashMap<>();
         paths.put("/foo", new SVNLogEntryPath("/foo", SVNLogEntryPath.TYPE_MODIFIED, null, -1));
         SVNLogEntry e = new SVNLogEntry(paths, 1234L, p, false);
 

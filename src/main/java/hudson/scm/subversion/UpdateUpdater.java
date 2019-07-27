@@ -28,12 +28,11 @@ package hudson.scm.subversion;
 
 import hudson.AbortException;
 import hudson.Extension;
-import hudson.model.Hudson;
 import hudson.scm.SubversionSCM.External;
 import hudson.scm.SubversionSCM.ModuleLocation;
 import hudson.scm.SubversionSCM.SvnInfo;
 import hudson.triggers.SCMTrigger;
-
+import jenkins.model.Jenkins;
 import org.apache.commons.lang.time.FastDateFormat;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.tmatesoft.svn.core.*;
@@ -139,7 +138,9 @@ public class UpdateUpdater extends WorkspaceUpdater {
 
             try {
                 File local = new File(ws, location.getLocalDir());
-                SubversionUpdateEventHandler eventHandler = new SubversionUpdateEventHandler(listener.getLogger(), externals, local, location.getLocalDir());
+                SubversionUpdateEventHandler eventHandler = new SubversionUpdateEventHandler(
+                    listener.getLogger(), externals, local, location.getLocalDir(), quietOperation,
+                    location.isCancelProcessOnExternalsFail());
                 svnuc.setEventHandler(eventHandler);
                 svnuc.setExternalsHandler(eventHandler);
 
@@ -150,15 +151,17 @@ public class UpdateUpdater extends WorkspaceUpdater {
                 
                 svnuc.setIgnoreExternals(location.isIgnoreExternalsOption());
                 preUpdate(location, local);
-                SVNDepth svnDepth = getSvnDepth(location.getDepthOption());
+                SVNDepth svnDepth = location.getSvnDepthForUpdate();
                 
                 switch (svnCommand) {
                     case UPDATE:
-                        listener.getLogger().println("Updating " + location.remote + " at revision " + revisionName);
+                        listener.getLogger().println("Updating " + location.remote + " at revision "
+                            + revisionName + (quietOperation ? " --quiet" : ""));
                         svnuc.doUpdate(local.getCanonicalFile(), r, svnDepth, true, true);
                         break;
                     case SWITCH:
-                        listener.getLogger().println("Switching to " + location.remote + " at revision " + revisionName);
+                        listener.getLogger().println("Switching to " + location.remote + " at revision "
+                            + revisionName + (quietOperation ? " --quiet" : ""));
                         svnuc.doSwitch(local.getCanonicalFile(), location.getSVNURL(), r, r, svnDepth, true, true, true);
                         break;
                     case CHECKOUT:
@@ -197,7 +200,7 @@ public class UpdateUpdater extends WorkspaceUpdater {
                     }
                     // trouble-shooting probe for #591
                     if (errorCode == SVNErrorCode.WC_NOT_LOCKED) {
-                        Hudson instance = Hudson.getInstance();
+                        Jenkins instance = Jenkins.getInstance();
                         if (instance != null) {
                             listener.getLogger().println("Polled jobs are " + instance.getDescriptorByType(SCMTrigger.DescriptorImpl.class).getItemsBeingPolled());
                         }

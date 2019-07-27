@@ -47,6 +47,7 @@ import hudson.slaves.DumbSlave;
 import hudson.triggers.SCMTrigger;
 import hudson.util.FormValidation;
 import hudson.util.StreamTaskListener;
+import jenkins.scm.impl.subversion.RemotableSVNErrorMessage;
 import org.dom4j.Document;
 import org.dom4j.io.DOMReader;
 import org.junit.Test;
@@ -71,7 +72,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
-import static hudson.scm.SubversionSCM.compareSVNAuthentications;
+import static org.junit.Assert.*;
+import org.junit.Before;
+import org.junit.Ignore;
 import static org.jvnet.hudson.test.recipes.PresetData.DataSet.ANONYMOUS_READONLY;
 
 /**
@@ -91,34 +94,32 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     
     FilePath workingcopy;
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
+    @Before
+    public void setUp() throws Exception {
         repo = SVNURL.parseURIDecoded("http://subversion.tigris.org/svn/subclipse");
 
         // during the test, don't pollute the user's configuration (esp. authentication cache).
-        System.setProperty(SubversionSCM.class.getName() + ".configDir", createTmpDir().getAbsolutePath());
+        System.setProperty(SubversionSCM.class.getName() + ".configDir", tmp.newFolder().getAbsolutePath());
     }
 
     @PresetData(ANONYMOUS_READONLY)
-    @Bug(2380)
-    public void testTaggingPermission() throws Exception {
+    @Issue("JENKINS-2380")
+    @Test
+    public void taggingPermission() throws Exception {
         // create a build
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(loadSvnRepo());
         final FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
 
         final SubversionTagAction action = b.getAction(SubversionTagAction.class);
-        executeOnServer(new Callable<Object>() {
-            public Object call() throws Exception {
-                assertFalse("Shouldn't be accessible to anonymous user",b.hasPermission(action.getPermission()));
-                return null;
-            }
+        r.executeOnServer(() -> {
+            assertFalse("Shouldn't be accessible to anonymous user",b.hasPermission(action.getPermission()));
+            return null;
         });
 
-        WebClient wc = new WebClient();
+        JenkinsRule.WebClient wc = r.createWebClient();
         HtmlPage html = wc.getPage(b);
 
         // make sure there's no link to the 'tag this build'
@@ -145,11 +146,11 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
 
         // now login as alice and make sure that the tagging would succeed
-        wc = new WebClient();
+        wc = r.createWebClient();
         wc.login("alice","alice");
         html = wc.getPage(b,"tagBuild/");
         HtmlForm form = html.getFormByName("tag");
-        submit(form);
+        r.submit(form);
     }
 
     /**
@@ -160,74 +161,84 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
     @Email("http://jenkins.361315.n4.nabble.com/Hudson-1-266-and-1-267-Subversion-authentication-broken-td375737.html")
-    public void IGNOREtestHttpsCheckOut() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void httpsCheckOut() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant/"));
 
-        FreeStyleBuild b = assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
+        FreeStyleBuild b = r.assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
         assertTrue(b.getWorkspace().child("build.xml").exists());
     }
 
     @Email("http://jenkins.361315.n4.nabble.com/Hudson-1-266-and-1-267-Subversion-authentication-broken-td375737.html")
-    public void IGNOREtestHttpCheckOut() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void httpCheckOut() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven/src/test/java/test/"));
 
-        FreeStyleBuild b = assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
+        FreeStyleBuild b = r.assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
         assertTrue(b.getWorkspace().child("AppTest.java").exists());
     }
 
     @Url("http://hudson.pastebin.com/m3ea34eea")
-    public void IGNOREtestRemoteCheckOut() throws Exception {
-        DumbSlave s = createSlave();
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void remoteCheckOut() throws Exception {
+        DumbSlave s = r.createSlave();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setAssignedLabel(s.getSelfLabel());
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant/"));
 
-        FreeStyleBuild b = assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
+        FreeStyleBuild b = r.assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
         assertTrue(b.getWorkspace().child("build.xml").exists());
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
     }
 
     /**
      * Tests the "URL@REV" format in SVN URL.
      */
-    @Bug(262)
-    public void IGNOREtestRevisionedCheckout() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-262")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void revisionedCheckout() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@13000"));
 
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertLogContains("at revision 13000", b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertLogContains("at revision 13000", b);
+        r.assertBuildStatus(Result.SUCCESS,b);
 
         b = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertLogContains("at revision 13000", b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertLogContains("at revision 13000", b);
+        r.assertBuildStatus(Result.SUCCESS,b);
     }
 
     /**
      * Tests the "URL@HEAD" format in the SVN URL
      */
-    public void testHeadRevisionCheckout() throws Exception {
+    @Test
+    public void headRevisionCheckout() throws Exception {
         File testRepo = new CopyExisting(getClass().getResource("two-revisions.zip")).allocate();
         SubversionSCM scm = new SubversionSCM("file://" + testRepo.toURI().toURL().getPath() + "@HEAD");
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(scm);
         
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertLogContains("At revision 2", b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertLogContains("At revision 2", b);
+        r.assertBuildStatus(Result.SUCCESS,b);
     }
 
     /**
      * Test parsing of @revision information from the tail of the URL
      */
-    public void testModuleLocationRevisions() throws Exception {
+    @Test
+    public void moduleLocationRevisions() throws Exception {
         SubversionSCM.ModuleLocation m = new SubversionSCM.ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@13000", null);
         SVNRevision r = m.getRevision(null);
         assertTrue(r.isValid());
@@ -237,7 +248,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         m = new SubversionSCM.ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@HEAD", null);
         r = m.getRevision(null);
         assertTrue(r.isValid());
-        assertTrue(r == SVNRevision.HEAD);
+        assertSame(r, SVNRevision.HEAD);
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", m.getURL());
 
         m = new SubversionSCM.ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@FAKE", null);
@@ -246,22 +257,26 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@FAKE", m.getURL());
     }
 
-    @Bug(10942)
-    public void IGNOREtestSingleModuleEnvironmentVariablesWithRevision() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-10942")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void singleModuleEnvironmentVariablesWithRevision() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@HEAD"));
 
         CaptureEnvironmentBuilder builder = new CaptureEnvironmentBuilder();
         p.getBuildersList().add(builder);
 
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", builder.getEnvVars().get("SVN_URL"));
         assertEquals(getActualRevision(p.getLastBuild(), "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant").toString(), builder.getEnvVars().get("SVN_REVISION"));
     }
     
-    @Bug(10942)
-    public void IGNOREtestMultiModuleEnvironmentVariablesWithRevision() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-10942")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void multiModuleEnvironmentVariablesWithRevision() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         ModuleLocation[] locations = {
             new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant@18075", null),
             new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven@HEAD", null)
@@ -271,7 +286,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         CaptureEnvironmentBuilder builder = new CaptureEnvironmentBuilder();
         p.getBuildersList().add(builder);
 
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", builder.getEnvVars().get("SVN_URL_1"));
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven", builder.getEnvVars().get("SVN_URL_2"));
@@ -283,21 +298,25 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     /**
      * Tests a checkout with RevisionParameterAction
      */
-    public void IGNOREtestRevisionParameter() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void revisionParameter() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         String url = "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant";
         p.setScm(new SubversionSCM(url));
 
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause(), 
         		new RevisionParameterAction(new SubversionSCM.SvnInfo(url, 13000))).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertLogContains("at revision 13000", b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertLogContains("at revision 13000", b);
+        r.assertBuildStatus(Result.SUCCESS,b);
     }
 
-    @Bug(22568)
-    public void IGNOREtestPollingWithDefaultParametersWithCurlyBraces() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-22568")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void pollingWithDefaultParametersWithCurlyBraces() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         String repo = "https://svn.jenkins-ci.org/";
         String path = "trunk/hudson/test-projects/trivial-ant/";
         p.setScm(new SubversionSCM("${REPO}" + path));
@@ -307,18 +326,20 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause(),
                 new ParametersAction(new StringParameterValue("REPO", repo))).get();
 
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
         assertTrue(b.getWorkspace().child("build.xml").exists());
 
         // as a baseline, this shouldn't detect any change
-        TaskListener listener = createTaskListener();
+        TaskListener listener = r.createTaskListener();
         PollingResult poll = p.poll(listener);
         assertFalse("Polling shouldn't have any changes.", poll.hasChanges());
     }
 
-    @Bug(22568)
-    public void IGNOREtestPollingWithDefaultParametersWithOutCurlyBraces() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-22568")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void pollingWithDefaultParametersWithOutCurlyBraces() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
         String repo = "https://svn.jenkins-ci.org";
         String path = "/trunk/hudson/test-projects/trivial-ant/";
@@ -329,18 +350,20 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause(),
                 new ParametersAction(new StringParameterValue("REPO", repo))).get();
 
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
         assertTrue(b.getWorkspace().child("build.xml").exists());
 
         // as a baseline, this shouldn't detect any change
-        TaskListener listener = createTaskListener();
+        TaskListener listener = r.createTaskListener();
         PollingResult poll = p.poll(listener);
         assertFalse("Polling shouldn't have any changes.", poll.hasChanges());
     }
 
-    @Bug(22568)
-    public void IGNOREtestPollingWithChoiceParametersWithOutCurlyBraces() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-22568")
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void pollingWithChoiceParametersWithOutCurlyBraces() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
         String repo = "https://svn.jenkins-ci.org/";
         String path = "trunk/hudson/test-projects/trivial-maven/src/test/java/test";
@@ -351,18 +374,19 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause(),
                 new ParametersAction(new StringParameterValue("REPO", repo))).get();
 
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
         assertTrue(b.getWorkspace().child("AppTest.java").exists());
 
         // as a baseline, this shouldn't detect any change
-        TaskListener listener = createTaskListener();
+        TaskListener listener = r.createTaskListener();
         PollingResult poll = p.poll(listener);
         assertFalse("Polling shouldn't have any changes.", poll.hasChanges());
     }
 
-
-    public void IGNOREtestRevisionParameterFolding() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void revisionParameterFolding() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         String url = "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant";
         p.setScm(new SubversionSCM(url));
 
@@ -377,16 +401,16 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         FreeStyleBuild b = f.get();
 	
         System.out.println(b.getLog(LOG_LIMIT));
-        assertLogContains("at revision 14000", b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertLogContains("at revision 14000", b);
+        r.assertBuildStatus(Result.SUCCESS,b);
     }
 
     private FreeStyleProject createPostCommitTriggerJob() throws Exception {
         // Disable crumbs because HTMLUnit refuses to mix request bodies with
         // request parameters
-        hudson.setCrumbIssuer(null);
+        r.jenkins.setCrumbIssuer(null);
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         String url = "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant";
         SCMTrigger trigger = new SCMTrigger("0 */6 * * *");
 
@@ -400,9 +424,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     private FreeStyleProject createPostCommitTriggerJobMultipleSvnLocations() throws Exception {
         // Disable crumbs because HTMLUnit refuses to mix request bodies with
         // request parameters
-        hudson.setCrumbIssuer(null);
+        r.jenkins.setCrumbIssuer(null);
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         String[] urls = new String[] {"https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant",
                 "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven/"};
 
@@ -420,8 +444,8 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     private FreeStyleBuild sendCommitTrigger(FreeStyleProject p, boolean includeRevision) throws Exception {
         String repoUUID = "71c3de6d-444a-0410-be80-ed276b4c234a";
 
-        WebClient wc = new WebClient();
-        WebRequest wr = new WebRequest(new URL(getURL() + "subversion/" + repoUUID + "/notifyCommit"), HttpMethod.POST);
+        WebClient wc = r.createWebClient();
+        WebRequest wr = new WebRequest(new URL(r.getURL() + "subversion/" + repoUUID + "/notifyCommit"), HttpMethod.POST);
         wr.setRequestBody("A   trunk/hudson/test-projects/trivial-ant/build.xml");
         wr.setAdditionalHeader("Content-Type", "text/plain;charset=UTF-8");
 
@@ -431,13 +455,13 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         
         WebConnection conn = wc.getWebConnection();
         WebResponse resp = conn.getResponse(wr);
-        assertTrue(isGoodHttpStatus(resp.getStatusCode()));
+        assertTrue(r.isGoodHttpStatus(resp.getStatusCode()));
 
         Thread.sleep(1000);
-        waitUntilNoActivity();
+        r.waitUntilNoActivity();
         FreeStyleBuild b = p.getLastBuild();
         assertNotNull(b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
 
         return b;
     }
@@ -445,8 +469,8 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     private FreeStyleBuild sendCommitTriggerMultipleSvnLocations(FreeStyleProject p, boolean includeRevision) throws Exception {
         String repoUUID = "71c3de6d-444a-0410-be80-ed276b4c234a";
 
-        WebClient wc = new WebClient();
-        WebRequest wr = new WebRequest(new URL(getURL() + "subversion/" + repoUUID + "/notifyCommit"), HttpMethod.POST);
+        WebClient wc = r.createWebClient();
+        WebRequest wr = new WebRequest(new URL(r.getURL() + "subversion/" + repoUUID + "/notifyCommit"), HttpMethod.POST);
         wr.setRequestBody("A   trunk/hudson/test-projects/trivial-ant/build.xml\n" +
         		"M   trunk/hudson/test-projects/trivial-maven/src/main/");
         wr.setAdditionalHeader("Content-Type", "text/plain;charset=UTF-8");
@@ -457,13 +481,13 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         
         WebConnection conn = wc.getWebConnection();
         WebResponse resp = conn.getResponse(wr);
-        assertTrue(isGoodHttpStatus(resp.getStatusCode()));
+        assertTrue(r.isGoodHttpStatus(resp.getStatusCode()));
 
         Thread.sleep(1000);
-        waitUntilNoActivity();
+        r.waitUntilNoActivity();
         FreeStyleBuild b = p.getLastBuild();
         assertNotNull(b);
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
 
         return b;
     }
@@ -474,13 +498,15 @@ public class SubversionSCMTest extends AbstractSubversionTest {
             throw new Exception("No revision found!");
         }
 
-        return revisionState.revisions.get(url).longValue();
+        return revisionState.revisions.get(url);
 
     }
     /**
      * Tests a checkout triggered from the post-commit hook
      */
-    public void IGNOREtestPostCommitTrigger() throws Exception {
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void postCommitTrigger() throws Exception {
         FreeStyleProject p = createPostCommitTriggerJob();
         FreeStyleBuild b = sendCommitTrigger(p, true);
 
@@ -490,7 +516,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     /**
      * Tests a checkout triggered from the post-commit hook
      */
-    public void IGNOREtestPostCommitTriggerMultipleSvnLocations() throws Exception {
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void postCommitTriggerMultipleSvnLocations() throws Exception {
         FreeStyleProject p = createPostCommitTriggerJobMultipleSvnLocations();
         FreeStyleBuild b = sendCommitTriggerMultipleSvnLocations(p, true);
 
@@ -509,7 +537,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Tests a checkout triggered from the post-commit hook without revision
      * information.
      */
-    public void IGNOREtestPostCommitTriggerNoRevision() throws Exception {
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void postCommitTriggerNoRevision() throws Exception {
         FreeStyleProject p = createPostCommitTriggerJob();
         FreeStyleBuild b = sendCommitTrigger(p, false);
 
@@ -521,14 +551,15 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * if the workspace and the current configuration is inconsistent and schedule a new build.
      */
     @Email("http://www.nabble.com/Proper-way-to-switch---relocate-SVN-tree---tt21173306.html")
-    public void testPollingAfterRelocation() throws Exception {
+    @Test
+    public void pollingAfterRelocation() throws Exception {
         // fetch the current workspace
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(loadSvnRepo());
         p.scheduleBuild2(0, new Cause.UserIdCause()).get();
 
         // as a baseline, this shouldn't detect any change
-        TaskListener listener = createTaskListener();
+        TaskListener listener = r.createTaskListener();
         assertFalse(p.poll(listener).hasChanges());
 
         // now switch the repository to a new one.
@@ -543,8 +574,10 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         assertFalse(p.poll(listener).hasChanges());
     }
 
-    public void IGNOREtestURLWithVariable() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void urlWithVariable() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
         // --- 1st case: URL with a variable ---
 
@@ -555,7 +588,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause(),
                 new ParametersAction(new StringParameterValue("REPO", repo))).get();
         System.out.println(b.getLog(LOG_LIMIT));
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
         assertTrue(b.getWorkspace().child("AppTest.java").exists());
 
         // --- 2nd case: URL with an empty variable ---
@@ -564,17 +597,18 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
         b = p.scheduleBuild2(0, new Cause.UserIdCause(),
                 new ParametersAction(new StringParameterValue("EMPTY_VAR", ""))).get();
-        assertBuildStatus(Result.SUCCESS,b);
+        r.assertBuildStatus(Result.SUCCESS,b);
         assertTrue(b.getWorkspace().child("AppTest.java").exists());
     }
 
     /**
      * Test that multiple repository URLs are all polled.
      */
-    @Bug(3168)
-    public void testPollMultipleRepositories() throws Exception {
+    @Issue("JENKINS-3168")
+    @Test
+    public void pollMultipleRepositories() throws Exception {
         // fetch the current workspaces
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         String svnBase = "file://" + new CopyExisting(getClass().getResource("/svn-repo.zip")).allocate().toURI().toURL().getPath();
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList(new ModuleLocation(svnBase + "trunk", null), new ModuleLocation(svnBase + "branches", null)),
@@ -583,7 +617,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         p.scheduleBuild2(0, new Cause.UserIdCause()).get();
 
         // as a baseline, this shouldn't detect any change
-        TaskListener listener = createTaskListener();
+        TaskListener listener = r.createTaskListener();
         assertFalse(p.poll(listener).hasChanges());
 
         createCommit(scm,"branches/foo");
@@ -597,34 +631,37 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     /**
      * Test that multiple repository URLs are all polled.
      */
-    @Bug(7461)
-    public void testMultipleRepositories() throws Exception {
+    @Issue("JENKINS-7461")
+    @Test
+    public void multipleRepositories() throws Exception {
         // fetch the current workspaces
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         String svnBase = "file://" + new CopyExisting(getClass().getResource("/svn-repo.zip")).allocate().toURI().toURL().getPath();
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList(new ModuleLocation(svnBase + "trunk", "trunk")),
                 new UpdateUpdater(), null, null, null, null, null, null);
         p.setScm(scm);
         Run r1 = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
-        assertLogContains("Cleaning local Directory trunk", r1);
+        r.assertLogContains("Cleaning local Directory trunk", r1);
 
         scm = new SubversionSCM(
                 Arrays.asList(new ModuleLocation(svnBase + "trunk", "trunk"), new ModuleLocation(svnBase + "branches", "branches")),
                 new UpdateUpdater(), null, null, null, null, null, null);
         p.setScm(scm);
         Run r2 = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
-        assertLogContains("Updating " + svnBase + "trunk", r2);
-        assertLogContains("Cleaning local Directory branches", r2);
+        r.assertLogContains("Updating " + svnBase + "trunk", r2);
+        r.assertLogContains("Cleaning local Directory branches", r2);
     }
     
-    public void testMultipleRepositoriesSvn17() throws Exception {
+    @Test
+    public void multipleRepositoriesSvn17() throws Exception {
     	configureSvnWorkspaceFormat(SubversionWorkspaceSelector.WC_FORMAT_17);
-    	testMultipleRepositories();
+    	multipleRepositories();
     }
     
-    public void testConfigRoundtrip() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    public void configRoundtrip() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList(
@@ -632,7 +669,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                 		new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusion", "d")),
                 new UpdateUpdater(),new Sventon(new URL("http://www.sun.com/"),"test"),"exclude","user","revprop","excludeMessage",null);
         p.setScm(scm);
-        submit(new WebClient().getPage(p,"configure").getFormByName("config"));
+        r.submit(r.createWebClient().getPage(p,"configure").getFormByName("config"));
         verify(scm,(SubversionSCM)p.getScm());
 
         scm = new SubversionSCM(
@@ -640,28 +677,30 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                 		new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusion", "c")),
         		new CheckoutUpdater(),null,"","","","",null);
         p.setScm(scm);
-        submit(new WebClient().getPage(p,"configure").getFormByName("config"));
+        r.submit(r.createWebClient().getPage(p,"configure").getFormByName("config"));
         verify(scm,(SubversionSCM)p.getScm());
     }
 
-    @Bug(7944)
-    public void testConfigRoundtrip2() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-7944")
+    @Test
+    public void configRoundtrip2() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList(
                 		new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusion", "")),
                 new UpdateUpdater(),null,null,null,null,null,null);
         p.setScm(scm);
-        configRoundtrip((Item)p);
+        r.configRoundtrip((Item)p);
         verify(scm,(SubversionSCM)p.getScm());
     }
 
-    @Bug(9143)
-    public void testCheckEmptyRemoteRemoved() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Issue("JENKINS-9143")
+    @Test
+    public void checkEmptyRemoteRemoved() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
 
-        List<ModuleLocation> locs = new ArrayList<ModuleLocation>();
+        List<ModuleLocation> locs = new ArrayList<>();
         locs.add(new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusion", "c"));
         locs.add(new ModuleLocation("", "d"));
         locs.add(new ModuleLocation("    ", "e"));
@@ -670,20 +709,23 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                 locs,
                 new UpdateUpdater(), new Sventon(new URL("http://www.sun.com/"), "test"), "exclude", "user", "revprop", "excludeMessage",null);
         p.setScm(scm);
-        submit(new WebClient().getPage(p, "configure").getFormByName("config"));
+        r.submit(r.createWebClient().getPage(p, "configure").getFormByName("config"));
         ModuleLocation[] ml = ((SubversionSCM) p.getScm()).getLocations();
         assertEquals(1, ml.length);
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusion", ml[0].remote);
     }
 
-    @Bug(5684)
-    public void testDoCheckExcludedUsers() throws Exception {
+    @Issue("JENKINS-5684")
+    @Test
+    public void doCheckExcludedUsers() throws Exception {
         String[] validUsernames = new String[] {
             "DOMAIN\\user",
             "user",
             "us_er",
             "user123",
             "User",
+            "User-Name",
+            "Do-Main\\User-Name",
             "", // this one is ignored
             "DOmain12\\User34"};
 
@@ -733,8 +775,10 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     		right = "";
     	assertEquals(left, right);
     }
-    
-    public void testSvnUrlParsing() {
+
+    @WithoutJenkins
+    @Test
+    public void svnUrlParsing() {
         check("http://foobar/");
         check("https://foobar/");
         check("file://foobar/");
@@ -750,8 +794,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Makes sure that Subversion doesn't check out workspace in 1.6
      */
     @Email("http://www.nabble.com/SVN-1.6-td24081571.html")
-    public void testWorkspaceVersion() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    public void workspaceVersion() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(loadSvnRepo());
         FreeStyleBuild b = p.scheduleBuild2(0).get();
 
@@ -776,16 +821,44 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
     /**
+     * Makes sure that quiet operation shows lesser output.
+     */
+    @Issue("JENKINS-14541")
+    @Test
+    public void testQuietCheckout() throws Exception {
+        SubversionSCM local = loadSvnRepo();
+        local.setWorkspaceUpdater(new CheckoutUpdater());
+        FreeStyleProject p = r.createFreeStyleProject("quietOperation");
+        p.setScm(local);
+
+        local.setQuietOperation(true);
+        FreeStyleBuild bQuiet = r.assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
+        List<String> logsQuiet = bQuiet.getLog(LOG_LIMIT);
+        //  This line in log should end with --quiet
+        assertTrue(logsQuiet.get(4).endsWith("--quiet"));
+        assertEquals("At revision 1", logsQuiet.get(5));
+
+        local.setQuietOperation(false);
+        FreeStyleBuild bVerbose = r.assertBuildStatusSuccess(p.scheduleBuild2(0, new Cause.UserIdCause()).get());
+        List<String> logsVerbose = bVerbose.getLog(LOG_LIMIT);
+        //  This line in log should NOT end with --quiet
+        assertFalse(logsVerbose.get(4).endsWith("--quiet"));
+        assertTrue(logsVerbose.get(5).endsWith("readme.txt"));
+        assertEquals("At revision 1", logsVerbose.get(6));
+    }
+    
+    /**
      * Makes sure the symbolic link is checked out correctly. There seems to be
      */
-    @Bug(3904)
-    public void testSymbolicLinkCheckout() throws Exception {
+    @Issue("JENKINS-3904")
+    @Test
+    public void symbolicLinkCheckout() throws Exception {
         // Only perform if symlink behavior is enabled
         if (!"true".equals(System.getProperty("svnkit.symlinks"))) {
             return;
         }
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/issue-3904"));
 
         FreeStyleBuild b = p.scheduleBuild2(0, new Cause.UserIdCause()).get();
@@ -794,8 +867,10 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         assertEquals("Files '" + source + "' and '" + linked + "' are not identical from user view.", readFileAsString(source), readFileAsString(linked));
     }
 
-    public void IGNOREtestExcludeByUser() throws Exception {
-        FreeStyleProject p = createFreeStyleProject( "testExcludeByUser" );
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void excludeByUser() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject( "testExcludeByUser" );
         p.setScm(new SubversionSCM(
                 Arrays.asList( new ModuleLocation( "https://svn.jenkins-ci.org/trunk/hudson/test-projects/testSubversionExclusions@19438", null )),
                 new UpdateUpdater(), null, "", "dty", "", "", null)
@@ -804,75 +879,77 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         // pollChanges returning true when the workspace does not exist.
         p.scheduleBuild2(0).get();
 
-        boolean foundChanges = p.poll(createTaskListener()).hasChanges();
+        boolean foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertFalse("Polling found changes that should have been ignored", foundChanges);
     }
 
     /**
      * Test excluded regions
      */
-    @Bug(6030)
-    public void testExcludedRegions() throws Exception {
+    @Issue("JENKINS-6030")
+    @Test
+    public void excludedRegions() throws Exception {
 //        SLAVE_DEBUG_PORT = 8001;
         File repo = new CopyExisting(getClass().getResource("HUDSON-6030.zip")).allocate();
         SubversionSCM scm = new SubversionSCM(ModuleLocation.parse(new String[]{"file://" + repo.toURI().toURL().getPath()},
                                                                    new String[]{"."}, null, null),
                                               new UpdateUpdater(), null, ".*/bar", "", "", "", "");
 
-        FreeStyleProject p = createFreeStyleProject("testExcludedRegions");
+        FreeStyleProject p = r.createFreeStyleProject("testExcludedRegions");
         p.setScm(scm);
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         // initial polling on the slave for the code path that doesn't find any change
-        assertFalse(p.poll(createTaskListener()).hasChanges());
+        assertFalse(p.poll(r.createTaskListener()).hasChanges());
 
         createCommit(scm, "bar");
 
         // polling on the slave for the code path that does have a change but should be excluded.
         assertFalse("Polling found changes that should have been ignored",
-                p.poll(createTaskListener()).hasChanges());
+                p.poll(r.createTaskListener()).hasChanges());
 
         createCommit(scm, "foo");
 
         // polling on the slave for the code path that doesn't find any change
         assertTrue("Polling didn't find a change it should have found.",
-                p.poll(createTaskListener()).hasChanges());
+                p.poll(r.createTaskListener()).hasChanges());
 
     }
     
     /**
      * Test included regions
      */
-    @Bug(6030)
-    public void testIncludedRegions() throws Exception {
+    @Issue("JENKINS-6030")
+    @Test
+    public void includedRegions() throws Exception {
 //        SLAVE_DEBUG_PORT = 8001;
         File repo = new CopyExisting(getClass().getResource("HUDSON-6030.zip")).allocate();
         SubversionSCM scm = new SubversionSCM(ModuleLocation.parse(new String[]{"file://" + repo.toURI().toURL().getPath()},
                                                                    new String[]{"."}, null, null),
                                               new UpdateUpdater(), null, "", "", "", "", ".*/foo");
 
-        FreeStyleProject p = createFreeStyleProject("testExcludedRegions");
+        FreeStyleProject p = r.createFreeStyleProject("testExcludedRegions");
         p.setScm(scm);
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         // initial polling on the slave for the code path that doesn't find any change
-        assertFalse(p.poll(createTaskListener()).hasChanges());
+        assertFalse(p.poll(r.createTaskListener()).hasChanges());
 
         createCommit(scm, "bar");
 
         // polling on the slave for the code path that does have a change but should be excluded.
         assertFalse("Polling found changes that should have been ignored",
-                p.poll(createTaskListener()).hasChanges());
+                p.poll(r.createTaskListener()).hasChanges());
 
         createCommit(scm, "foo");
 
         // polling on the slave for the code path that doesn't find any change
         assertTrue("Polling didn't find a change it should have found.",
-                p.poll(createTaskListener()).hasChanges());
+                p.poll(r.createTaskListener()).hasChanges());
 
     }
     
-    @Bug(10449)
+    @Issue("JENKINS-10449")
 	public void testFilterChangelog() throws Exception {
         verifyChangelogFilter(true);
         verifyChangelogFilter(false);
@@ -886,26 +963,26 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                                                                      new String[]{"."},null,null),
                                                 new UpdateUpdater(), null, "/z.*", "", "", "", "", false, shouldFilterLog, null);
 
-          FreeStyleProject p = createFreeStyleProject(String.format("testFilterChangelog-%s", shouldFilterLog));
+          FreeStyleProject p = r.createFreeStyleProject(String.format("testFilterChangelog-%s", shouldFilterLog));
           p.setScm(scm);
-          assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+          r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
           // initial polling on the slave for the code path that doesn't find any change
-          assertFalse(p.poll(createTaskListener()).hasChanges());
+          assertFalse(p.poll(r.createTaskListener()).hasChanges());
 
           createCommit(scm, "z/q");
 
           // polling on the slave for the code path that does have a change but should be excluded.
           assertFalse("Polling found changes that should have been ignored",
-                  p.poll(createTaskListener()).hasChanges());
+                  p.poll(r.createTaskListener()).hasChanges());
 
           createCommit(scm, "foo");
 
           assertTrue("Polling didn't find a change it should have found.",
-                  p.poll(createTaskListener()).hasChanges());
+                  p.poll(r.createTaskListener()).hasChanges());
 
           AbstractBuild build = p.scheduleBuild2(0).get();
-          assertBuildStatusSuccess(build);
+          r.assertBuildStatusSuccess(build);
           boolean ignored = true, included = false;
           @SuppressWarnings("unchecked")
         ChangeLogSet<Entry> cls = build.getChangeSet();
@@ -918,22 +995,23 @@ public class SubversionSCMTest extends AbstractSubversionTest {
           }
 
           boolean result = ignored && included;
-          assertTrue("Changelog included or excluded entries it shouldn't have.", shouldFilterLog? result : !result);
+        assertEquals("Changelog included or excluded entries it shouldn't have.", shouldFilterLog, result);
     }
     
     /**
      * Do the polling on the slave and make sure it works.
      */
-    @Bug(4299)
-    public void testPolling() throws Exception {
+    @Issue("JENKINS-4299")
+    @Test
+    public void polling() throws Exception {
 //        SLAVE_DEBUG_PORT = 8001;
         File repo = new CopyExisting(getClass().getResource("two-revisions.zip")).allocate();
         SubversionSCM scm = new SubversionSCM("file://" + repo.toURI().toURL().getPath());
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(scm);
-        p.setAssignedLabel(createSlave().getSelfLabel());
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        p.setAssignedLabel(r.createSlave().getSelfLabel());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         // initial polling on the slave for the code path that doesn't find any change
         assertFalse(p.poll(StreamTaskListener.fromStdout()).hasChanges());
@@ -945,9 +1023,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
     @Test
-    public void testIgnorePropertyOnlyDirChanges() throws Exception {
+    public void ignorePropertyOnlyDirChanges() throws Exception {
 	File repo = new CopyExisting(getClass().getResource("ignoreProps.zip")).allocate();
-        FreeStyleProject p = createFreeStyleProject( "testIgnorePropertyOnlyDirChanges" );
+        FreeStyleProject p = r.createFreeStyleProject( "testIgnorePropertyOnlyDirChanges" );
         SubversionSCM scm = new SubversionSCM(
                 Arrays.asList( new ModuleLocation( "file://" + repo.toURI().toURL().getPath() + "/p", "." )),
                 new UpdateUpdater(), null, null, null, null, null, null, true);
@@ -960,7 +1038,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         changeProperties("");
         commitWorkingCopy("meta only");
                 
-        boolean foundChanges = p.poll(createTaskListener()).hasChanges();
+        boolean foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertFalse("Property only changes commit should have been ignored.", foundChanges);
 
         p.scheduleBuild2(0).get();
@@ -968,7 +1046,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         addFiles("x", "y");
         commitWorkingCopy("meta + add");
      
-        foundChanges = p.poll(createTaskListener()).hasChanges();
+        foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertTrue("Non Property only changes (adds) commit should not be ignored.", foundChanges);
         
         p.scheduleBuild2(0).get();
@@ -977,7 +1055,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         changeFiles("x", "y", "c1/f2.txt");
         commitWorkingCopy("meta + files");
      
-        foundChanges = p.poll(createTaskListener()).hasChanges();
+        foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertTrue("Non Property only changes (modify) commit should not be ignored.", foundChanges);
 
         // ignored commit followed by not ignored commit
@@ -988,14 +1066,14 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         changeFiles("x", "y");
         commitWorkingCopy("files");
      
-        foundChanges = p.poll(createTaskListener()).hasChanges();
+        foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertTrue("Non Property only changes commit should not be ignored.", foundChanges);
 
         p.scheduleBuild2(0).get();
         changeProperties("c1");
         commitWorkingCopy("meta only");
      
-        foundChanges = p.poll(createTaskListener()).hasChanges();
+        foundChanges = p.poll(r.createTaskListener()).hasChanges();
         assertFalse("Property only changes commit should be ignored.", foundChanges);
     }
     
@@ -1004,10 +1082,10 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * @return 
      */
     private void createWorkingCopy(SubversionSCM scm) throws Exception {
-	FreeStyleProject forCommit = createFreeStyleProject();
+	FreeStyleProject forCommit = r.createFreeStyleProject();
 	forCommit.setScm(scm);
-	forCommit.setAssignedLabel(hudson.getSelfLabel());
-	FreeStyleBuild b = assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
+	forCommit.setAssignedLabel(r.jenkins.getSelfLabel());
+	FreeStyleBuild b = r.assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
 	workingcopy = b.getWorkspace();
     }
 	
@@ -1053,13 +1131,13 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Manufactures commits by adding files in the given names.
      */
     private void createCommit(SubversionSCM scm, String... paths) throws Exception {
-        FreeStyleProject forCommit = createFreeStyleProject();
+        FreeStyleProject forCommit = r.createFreeStyleProject();
         forCommit.setScm(scm);
-        forCommit.setAssignedLabel(hudson.getSelfLabel());
-        FreeStyleBuild b = assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
+        forCommit.setAssignedLabel(r.jenkins.getSelfLabel());
+        FreeStyleBuild b = r.assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
         SvnClientManager svnm = SubversionSCM.createClientManager((AbstractProject)null);
 
-        List<File> added = new ArrayList<File>();
+        List<File> added = new ArrayList<>();
         for (String path : paths) {
             FilePath newFile = b.getWorkspace().child(path);
             added.add(new File(newFile.getRemote()));
@@ -1074,24 +1152,25 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
 
-    public void testMasterPolling() throws Exception {
+    @Test
+    public void masterPolling() throws Exception {
         File repo = new CopyExisting(getClass().getResource("two-revisions.zip")).allocate();
         SubversionSCM scm = new SubversionSCM("file://" + repo.toURI().toURL().getPath());
         scm.setPollFromMaster(true);
 
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(scm);
-        p.setAssignedLabel(createSlave().getSelfLabel());
-        assertBuildStatusSuccess(p.scheduleBuild2(2).get());
+        p.setAssignedLabel(r.createSlave().getSelfLabel());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(2).get());
 
         // initial polling on the master for the code path that doesn't find any change
         assertFalse(p.poll(StreamTaskListener.fromStdout()).hasChanges());
 
         // create a commit
-        FreeStyleProject forCommit = createFreeStyleProject();
+        FreeStyleProject forCommit = r.createFreeStyleProject();
         forCommit.setScm(scm);
-        forCommit.setAssignedLabel(hudson.getSelfLabel());
-        FreeStyleBuild b = assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
+        forCommit.setAssignedLabel(r.jenkins.getSelfLabel());
+        FreeStyleBuild b = r.assertBuildStatusSuccess(forCommit.scheduleBuild2(0).get());
         FilePath newFile = b.getWorkspace().child("foo");
         newFile.touch(System.currentTimeMillis());
         SvnClientManager svnm = SubversionSCM.createClientManager(p);
@@ -1104,8 +1183,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
 
-    public void testCompareSVNAuthentications() throws Exception {
-        assertFalse(compareSVNAuthentications(new SVNUserNameAuthentication("me",true),new SVNSSHAuthentication("me","me",22,true)));
+    @Test
+    public void compareSVNAuthentications() throws Exception {
+        assertFalse(SubversionSCM.compareSVNAuthentications(new SVNUserNameAuthentication("me",true),new SVNSSHAuthentication("me","me",22,true)));
         // same object should compare equal
         _idem(new SVNUserNameAuthentication("me",true));
         _idem(new SVNSSHAuthentication("me","pass",22,true));
@@ -1115,34 +1195,34 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         _idem(new SVNSSLAuthentication(new File("./some.key"), "", true));
 
         // make sure two Files and char[]s compare the same 
-        assertTrue(compareSVNAuthentications(
+        assertTrue(SubversionSCM.compareSVNAuthentications(
                 new SVNSSHAuthentication("me",new File("./some.key"),null,23,false),
                 new SVNSSHAuthentication("me",new File("./some.key"),null,23,false)));
-        assertTrue(compareSVNAuthentications(
+        assertTrue(SubversionSCM.compareSVNAuthentications(
                 new SVNSSHAuthentication("me","key".toCharArray(),"phrase",0,false),
                 new SVNSSHAuthentication("me","key".toCharArray(),"phrase",0,false)));
 
         // negative cases
-        assertFalse(compareSVNAuthentications(
+        assertFalse(SubversionSCM.compareSVNAuthentications(
                 new SVNSSHAuthentication("me",new File("./some1.key"),null,23,false),
                 new SVNSSHAuthentication("me",new File("./some2.key"),null,23,false)));
-        assertFalse(compareSVNAuthentications(
+        assertFalse(SubversionSCM.compareSVNAuthentications(
                 new SVNSSHAuthentication("me","key".toCharArray(),"phrase",0,false),
                 new SVNSSHAuthentication("yo","key".toCharArray(),"phrase",0,false)));
 
     }
 
     private void _idem(SVNAuthentication a) {
-        assertTrue(compareSVNAuthentications(a,a));
+        assertTrue(SubversionSCM.compareSVNAuthentications(a,a));
     }
 
     /**
      * Make sure that a failed credential doesn't result in an infinite loop
-     *
-     * TODO: verify that this test case is invalid for new credentials based world order
      */
-    @Bug(2909)
-    public void invalidTestInfiniteLoop() throws Exception {
+    @Issue("JENKINS-2909")
+    @Ignore("TODO verify that this test case is invalid for new credentials based world order")
+    @Test
+    public void infiniteLoop() throws Exception {
         // creates a purely in memory auth manager
         ISVNAuthenticationManager m = createInMemoryManager();
 
@@ -1155,15 +1235,15 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
 
         // let Jenkins have the credential
-        descriptor.postCredential(null,repo.toDecodedString(),"guest","",null,new PrintWriter(System.out));
+        r.jenkins.getDescriptorByType(SubversionSCM.DescriptorImpl.class).postCredential(null,repo.toDecodedString(),"guest","",null,new PrintWriter(System.out));
 
         // emulate the call flow where the credential fails
-        List<SVNAuthentication> attempted = new ArrayList<SVNAuthentication>();
+        List<SVNAuthentication> attempted = new ArrayList<>();
         SVNAuthentication a = m.getFirstAuthentication(kind, realm, repo);
         assertNotNull(a);
         attempted.add(a);
         for (int i=0; i<10; i++) {
-            m.acknowledgeAuthentication(false,kind,realm,SVNErrorMessage.create(SVNErrorCode.RA_NOT_AUTHORIZED),a);
+            m.acknowledgeAuthentication(false,kind,realm,new RemotableSVNErrorMessage(SVNErrorCode.RA_NOT_AUTHORIZED),a);
             try {
                 a = m.getNextAuthentication(kind,realm,repo);
                 assertNotNull(a);
@@ -1185,11 +1265,11 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
     /**
      * Even if the default providers remember bogus passwords, Hudson should still attempt what it knows.
-     *
-     * TODO: verify that this test case is invalid for new credentials based world order
      */
-    @Bug(3936)
-    public void invalidTest3936()  throws Exception {
+    @Issue("JENKINS-3936")
+    @Ignore("TODO verify that this test case is invalid for new credentials based world order")
+    @Test
+    public void retainBogusPasswords()  throws Exception {
         // creates a purely in memory auth manager
         ISVNAuthenticationManager m = createInMemoryManager();
 
@@ -1204,7 +1284,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         // teach a bogus credential and have SVNKit store it.
         SVNPasswordAuthentication bogus = new SVNPasswordAuthentication("bogus", "bogus", true);
         m.acknowledgeAuthentication(true, kind, realm, null, bogus);
-        assertTrue(compareSVNAuthentications(m.getFirstAuthentication(kind, realm, repo), bogus));
+        assertTrue(SubversionSCM.compareSVNAuthentications(m.getFirstAuthentication(kind, realm, repo), bogus));
         try {
             attemptAccess(m);
             fail("SVNKit shouldn't yet know how to access");
@@ -1213,28 +1293,34 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
         // make sure the failure didn't clean up the cache,
         // since what we want to test here is Hudson trying to supply its credential, despite the failed cache
-        assertTrue(compareSVNAuthentications(m.getFirstAuthentication(kind, realm, repo),bogus));
+        assertTrue(SubversionSCM.compareSVNAuthentications(m.getFirstAuthentication(kind, realm, repo),bogus));
 
         // now let Hudson have the real credential
         // can we now access the repo?
-        descriptor.postCredential(null,repo.toDecodedString(),"guest","",null,new PrintWriter(System.out));
+        r.jenkins.getDescriptorByType(SubversionSCM.DescriptorImpl.class).postCredential(null,repo.toDecodedString(),"guest","",null,new PrintWriter(System.out));
         attemptAccess(m);
     }
 
     private void attemptAccess(ISVNAuthenticationManager m) throws SVNException {
         SVNRepository repository = SVNRepositoryFactory.create(repo);
-        repository.setAuthenticationManager(m);
-        repository.testConnection();
+        try {
+            repository.setAuthenticationManager(m);
+            repository.testConnection();
+        } finally {
+            repository.closeSession();
+        }
     }
 
     private ISVNAuthenticationManager createInMemoryManager() {
-        ISVNAuthenticationManager m = new SVNAuthenticationManager(hudson.root,null,null);
-        m.setAuthenticationProvider(descriptor.createAuthenticationProvider(null));
+        ISVNAuthenticationManager m = new SVNAuthenticationManager(r.jenkins.root, null, null);
+        m.setAuthenticationProvider(r.jenkins.getDescriptorByType(SubversionSCM.DescriptorImpl.class).createAuthenticationProvider(null));
         return m;
     }
 
-    public void IGNOREtestMultiModuleEnvironmentVariables() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void multiModuleEnvironmentVariables() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         ModuleLocation[] locations = {
             new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", null),
             new ModuleLocation("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven", null)
@@ -1244,7 +1330,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         CaptureEnvironmentBuilder builder = new CaptureEnvironmentBuilder();
         p.getBuildersList().add(builder);
 
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", builder.getEnvVars().get("SVN_URL_1"));
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-maven", builder.getEnvVars().get("SVN_URL_2"));
@@ -1253,30 +1339,34 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
     }
 
-    public void IGNOREtestSingleModuleEnvironmentVariables() throws Exception {
-        FreeStyleProject p = createFreeStyleProject();
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void singleModuleEnvironmentVariables() throws Exception {
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(new SubversionSCM("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant"));
 
         CaptureEnvironmentBuilder builder = new CaptureEnvironmentBuilder();
         p.getBuildersList().add(builder);
 
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", builder.getEnvVars().get("SVN_URL"));
         assertEquals(getActualRevision(p.getLastBuild(), "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant").toString(), builder.getEnvVars().get("SVN_REVISION"));
     }
 
-    public void IGNOREtestRecursiveEnvironmentVariables() throws Exception {
+    @Test
+    @Ignore("TODO use docker-fixtures for a reproducible test case")
+    public void recursiveEnvironmentVariables() throws Exception {
         EnvironmentContributor.all().add(new EnvironmentContributor() {
             @Override public void buildEnvironmentFor(Run run, EnvVars ev, TaskListener tl) throws IOException, InterruptedException {
                 ev.put("TOOL", "ant");
                 ev.put("ROOT", "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-${TOOL}");
             }
         });
-        FreeStyleProject p = createFreeStyleProject("job-with-envs");
+        FreeStyleProject p = r.createFreeStyleProject("job-with-envs");
         p.setScm(new SubversionSCM("$ROOT"));
         CaptureEnvironmentBuilder builder = new CaptureEnvironmentBuilder();
         p.getBuildersList().add(builder);
-        assertBuildStatusSuccess(p.scheduleBuild2(0));
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0));
         assertTrue(p.getLastBuild().getWorkspace().child("build.xml").exists());
         assertEquals("https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant", builder.getEnvVars().get("SVN_URL"));
         assertEquals(getActualRevision(p.getLastBuild(), "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant").toString(), builder.getEnvVars().get("SVN_REVISION"));
@@ -1284,40 +1374,41 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         assertEquals(getActualRevision(p.getLastBuild(), "https://svn.jenkins-ci.org/trunk/hudson/test-projects/trivial-ant").toString(), builder.getEnvVars().get("SVN_REVISION_1"));
     }
 
-    @Bug(1379)
-    public void testMultipleCredentialsPerRepo() throws Exception {
+    @Issue("JENKINS-1379")
+    @Test
+    public void multipleCredentialsPerRepo() throws Exception {
         Proc p = runSvnServe(getClass().getResource("HUDSON-1379.zip"));
         try {
             SystemCredentialsProvider.getInstance().setDomainCredentialsMap(Collections.singletonMap(Domain.global(),
                     Collections.<Credentials>emptyList()
             ));
 
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
             b.setScm(new SubversionSCM("svn://localhost/bob", "1-bob", "."));
 
-            FreeStyleProject c = createFreeStyleProject();
+            FreeStyleProject c = r.createFreeStyleProject();
             c.setScm(new SubversionSCM("svn://localhost/charlie", "2-charlie", "."));
 
             // should fail without a credential
-            assertBuildStatus(Result.FAILURE, b.scheduleBuild2(0).get());
+            r.assertBuildStatus(Result.FAILURE, b.scheduleBuild2(0).get());
             SystemCredentialsProvider.getInstance().setDomainCredentialsMap(Collections.singletonMap(Domain.global(),
                     Arrays.<Credentials>asList(
                     new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, "1-bob", null, "bob","bob")
                     )
             ));
-            buildAndAssertSuccess(b);
+            r.buildAndAssertSuccess(b);
 
-            assertBuildStatus(Result.FAILURE, c.scheduleBuild2(0).get());
+            r.assertBuildStatus(Result.FAILURE, c.scheduleBuild2(0).get());
             SystemCredentialsProvider.getInstance().setDomainCredentialsMap(Collections.singletonMap(Domain.global(),
                     Arrays.<Credentials>asList(
                     new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, "1-bob", null, "bob","bob"),
                     new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, "2-charlie", null, "charlie","charlie")
                     )
             ));
-            buildAndAssertSuccess(c);
+            r.buildAndAssertSuccess(c);
 
             // b should still build fine.
-            buildAndAssertSuccess(b);
+            r.buildAndAssertSuccess(b);
         } finally {
             p.kill();
         }
@@ -1326,32 +1417,33 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     /**
      * Subversion externals to a file. Requires 1.6 workspace.
      */
-    @Bug(7539)
-    public void testExternalsToFile() throws Exception {
+    @Issue("JENKINS-7539")
+    @Test
+    public void externalsToFile() throws Exception {
         Proc server = runSvnServe(getClass().getResource("HUDSON-7539.zip"));
         try {
             // enable 1.6 mode
-            HtmlForm f = createWebClient().goTo("configure").getFormByName("config");
+            HtmlForm f = r.createWebClient().goTo("configure").getFormByName("config");
             f.getSelectByName("svn.workspaceFormat").setSelectedAttribute("10",true);
-            submit(f);
+            r.submit(f);
 
-            FreeStyleProject p = createFreeStyleProject();
+            FreeStyleProject p = r.createFreeStyleProject();
             p.setScm(new SubversionSCM("svn://localhost/dir1"));
-            FreeStyleBuild b = assertBuildStatusSuccess(p.scheduleBuild2(0));
-            System.out.println(getLog(b));
+            FreeStyleBuild b = r.assertBuildStatusSuccess(p.scheduleBuild2(0));
 
             assertTrue(b.getWorkspace().child("2").exists());
             assertTrue(b.getWorkspace().child("3").exists());
             assertTrue(b.getWorkspace().child("test.x").exists());
 
-            assertBuildStatusSuccess(p.scheduleBuild2(0));
+            r.assertBuildStatusSuccess(p.scheduleBuild2(0));
         } finally {
             server.kill();
         }
     }
 
-    @Bug(1379)
-    public void testSuperUserForAllRepos() throws Exception {
+    @Issue("JENKINS-1379")
+    @Test
+    public void superUserForAllRepos() throws Exception {
         Proc p = runSvnServe(getClass().getResource("HUDSON-1379.zip"));
         try {
             SystemCredentialsProvider.getInstance().setDomainCredentialsMap(Collections.singletonMap(Domain.global(),
@@ -1359,21 +1451,21 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                     new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, "1-alice", null, "alice","alice")
                     )
             ));
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
             b.setScm(new SubversionSCM("svn://localhost/bob"));
 
-            FreeStyleProject c = createFreeStyleProject();
+            FreeStyleProject c = r.createFreeStyleProject();
             c.setScm(new SubversionSCM("svn://localhost/charlie"));
 
             // should fail without a credential
-            assertBuildStatus(Result.FAILURE,b.scheduleBuild2(0).get());
-            assertBuildStatus(Result.FAILURE,c.scheduleBuild2(0).get());
+            r.assertBuildStatus(Result.FAILURE,b.scheduleBuild2(0).get());
+            r.assertBuildStatus(Result.FAILURE,c.scheduleBuild2(0).get());
 
             b.setScm(new SubversionSCM("svn://localhost/bob", "1-alice", "."));
             c.setScm(new SubversionSCM("svn://localhost/charlie", "1-alice", "."));
             // but with the super user credential both should work now
-            buildAndAssertSuccess(b);
-            buildAndAssertSuccess(c);
+            r.buildAndAssertSuccess(b);
+            r.buildAndAssertSuccess(c);
         } finally {
             p.kill();
         }
@@ -1383,7 +1475,8 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Ensures that the introduction of {@link WorkspaceUpdater} maintains backward compatibility with
      * existing data.
      */
-    public void testWorkspaceUpdaterCompatibility() throws Exception {
+    @Test
+    public void workspaceUpdaterCompatibility() throws Exception {
         Proc p = runSvnServe(getClass().getResource("small.zip"));
         try {
             verifyCompatibility("legacy-update.xml", UpdateUpdater.class);
@@ -1395,19 +1488,20 @@ public class SubversionSCMTest extends AbstractSubversionTest {
     }
 
     private void verifyCompatibility(String resourceName, Class<? extends WorkspaceUpdater> expected) throws Exception {
-        TopLevelItem item = jenkins.getItem("update");
+        TopLevelItem item = r.jenkins.getItem("update");
         if (item != null) {
             item.delete();
         }
-        AbstractProject job = (AbstractProject) hudson.createProjectFromXML("update", getClass().getResourceAsStream(resourceName));
+        AbstractProject job = (AbstractProject) r.jenkins.createProjectFromXML("update", getClass().getResourceAsStream(resourceName));
         assertEquals(expected, ((SubversionSCM)job.getScm()).getWorkspaceUpdater().getClass());
     }
 
-    public void testUpdateWithCleanUpdater() throws Exception {
+    @Test
+    public void updateWithCleanUpdater() throws Exception {
         // this contains an empty "a" file and svn:ignore that ignores b
         Proc srv = runSvnServe(getClass().getResource("clean-update-test.zip"));
         try {
-            FreeStyleProject p = createFreeStyleProject();
+            FreeStyleProject p = r.createFreeStyleProject();
             SubversionSCM scm = new SubversionSCM("svn://localhost/");
             scm.setWorkspaceUpdater(new UpdateWithCleanUpdater());
             p.setScm(scm);
@@ -1422,7 +1516,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                     return true;
                 }
             });
-            FreeStyleBuild b = buildAndAssertSuccess(p);
+            FreeStyleBuild b = r.buildAndAssertSuccess(p);
 
             // this should have created b and c
             FilePath ws = b.getWorkspace();
@@ -1431,7 +1525,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             // now, remove the builder that makes the workspace dirty and rebuild
             p.getBuildersList().clear();
-            b = buildAndAssertSuccess(p);
+            b = r.buildAndAssertSuccess(p);
             System.out.println(b.getLog());
 
             // those files should have been cleaned
@@ -1447,15 +1541,16 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Used for experimenting the memory leak problem.
      * This test by itself doesn't detect that, but I'm leaving it in anyway.
      */
-    @Bug(8061)
-    public void testPollingLeak() throws Exception {
+    @Issue("JENKINS-8061")
+    @Test
+    public void pollingLeak() throws Exception {
         Proc p = runSvnServe(getClass().getResource("small.zip"));
         try {
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
             b.setScm(new SubversionSCM("svn://localhost/"));
-            b.setAssignedNode(createSlave());
+            b.setAssignedNode(r.createSlave());
 
-            assertBuildStatusSuccess(b.scheduleBuild2(0));
+            r.assertBuildStatusSuccess(b.scheduleBuild2(0));
 
             b.poll(new StreamTaskListener(System.out,Charset.defaultCharset()));
         } finally {
@@ -1468,11 +1563,12 @@ public class SubversionSCMTest extends AbstractSubversionTest {
      * Check out a pinned external and the same url unpinned.
      * See that we can poll afterward w/o getting confused.
      */
-    @Bug(6209)
-    public void testPinnedExternals() throws Exception {
+    @Issue("JENKINS-6209")
+    @Test
+    public void pinnedExternals() throws Exception {
         Proc p = runSvnServe(getClass().getResource("JENKINS-6209.zip"));
         try {
-                FreeStyleProject b = createFreeStyleProject();
+                FreeStyleProject b = r.createFreeStyleProject();
 
             ModuleLocation[] locations = {
                     new ModuleLocation("svn://localhost/y", null),
@@ -1481,7 +1577,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             b.setScm(new SubversionSCM(Arrays.asList(locations), new CheckoutUpdater(), null, null, null, null, null, null));
 
-            FreeStyleBuild build = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             FilePath ws = build.getWorkspace();
             assertEquals(ws.child("z").child("a").readToString(),"za 2\n");
             assertEquals(ws.child("y").child("z").child("a").readToString(),"za 1\n");
@@ -1492,8 +1588,9 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
     }
 
-    @Bug(10943)
-    public void testGetLocalDirWithAtRevision() throws Exception {
+    @Issue("JENKINS-10943")
+    @Test
+    public void getLocalDirWithAtRevision() throws Exception {
         // remote is not configured.
         SubversionSCM scm = new SubversionSCM("http://localhost/project@100", null);
         ModuleLocation[] locs = scm.getLocations();
@@ -1501,12 +1598,13 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         assertEquals("project", locs[0].getLocalDir());
     }
 
-    @Bug(777)
-    public void testIgnoreExternals() throws Exception {
+    @Issue("JENKINS-777")
+    @Test
+    public void ignoreExternals() throws Exception {
         Proc p = runSvnServe(getClass().getResource("JENKINS-777.zip"));
 
         try {
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
 
             ModuleLocation[] locations = {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "no_externals", "infinity", true),
@@ -1515,7 +1613,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             b.setScm(new SubversionSCM(Arrays.asList(locations), new CheckoutUpdater(), null, null, null, null, null, null));
 
-            FreeStyleBuild build = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             FilePath ws = build.getWorkspace();
 
             // Check that the external exists
@@ -1528,12 +1626,13 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
     }
 
-    @Bug(777)
-    public void testDepthOptions() throws Exception {
+    @Issue("JENKINS-777")
+    @Test
+    public void depthOptions() throws Exception {
         Proc p = runSvnServe(getClass().getResource("JENKINS-777.zip"));
 
         try {
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
 
             ModuleLocation[] locations = {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "empty", "empty", true),
@@ -1544,7 +1643,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             b.setScm(new SubversionSCM(Arrays.asList(locations), new CheckoutUpdater(), null, null, null, null, null, null));
 
-            FreeStyleBuild build = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             FilePath ws = build.getWorkspace();
 
             // Test if file file1 exists for various depths
@@ -1573,17 +1672,18 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
     }
 
-    @Bug(777)
-    public void testChangingDepthWithUpdateUpdater() throws Exception {
+    @Issue("JENKINS-777")
+    @Test
+    public void changingDepthWithUpdateUpdater() throws Exception {
         Proc p = runSvnServe(getClass().getResource("JENKINS-777.zip"));
 
         try {
             // enable 1.6 mode
-            HtmlForm f = createWebClient().goTo("configure").getFormByName("config");
+            HtmlForm f = r.createWebClient().goTo("configure").getFormByName("config");
             f.getSelectByName("svn.workspaceFormat").setSelectedAttribute("10",true);
-            submit(f);
+            r.submit(f);
 
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
 
             ModuleLocation[] locations = {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "proja", "infinity", true)
@@ -1591,7 +1691,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             // Do initial update with infinite depth and check that file1 exists
             b.setScm(new SubversionSCM(Arrays.asList(locations), new UpdateUpdater(), null, null, null, null, null, null));
-            FreeStyleBuild build = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             FilePath ws = build.getWorkspace();
             assertTrue(ws.child("proja").child("file1").exists());
 
@@ -1600,7 +1700,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "proja", "empty", true)
                 };
             b.setScm(new SubversionSCM(Arrays.asList(locations2), new UpdateUpdater(), null, null, null, null, null, null));
-            FreeStyleBuild build2 = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build2 = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             ws = build2.getWorkspace();
             assertTrue(!(ws.child("proja").child("file1").exists()));
 
@@ -1609,17 +1709,18 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
     }
 
-    @Bug(17974)
-    public void testChangingDepthInJob() throws Exception {
+    @Issue("JENKINS-17974")
+    @Test
+    public void changingDepthInJob() throws Exception {
         Proc p = runSvnServe(getClass().getResource("JENKINS-777.zip"));
 
         try {
             // enable 1.6 mode
-            HtmlForm f = createWebClient().goTo("configure").getFormByName("config");
+            HtmlForm f = r.createWebClient().goTo("configure").getFormByName("config");
             f.getSelectByName("svn.workspaceFormat").setSelectedAttribute("10",true);
-            submit(f);
+            r.submit(f);
 
-            FreeStyleProject b = createFreeStyleProject();
+            FreeStyleProject b = r.createFreeStyleProject();
 
             ModuleLocation[] locations = {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "proja", "infinity", true)
@@ -1627,7 +1728,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
 
             // Do initial update with infinite depth and check that subdir exists
             b.setScm(new SubversionSCM(Arrays.asList(locations), new UpdateUpdater(), null, null, null, null, null, null));
-            FreeStyleBuild build = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             FilePath ws = build.getWorkspace();
             assertTrue(ws.child("proja").child("subdir").exists());
 
@@ -1645,7 +1746,7 @@ public class SubversionSCMTest extends AbstractSubversionTest {
                     new ModuleLocation("svn://localhost/jenkins-777/proja", "proja", "undefined", true)
                 };
             b.setScm(new SubversionSCM(Arrays.asList(locations2), new UpdateUpdater(), null, null, null, null, null, null));
-            FreeStyleBuild build2 = assertBuildStatusSuccess(b.scheduleBuild2(0));
+            FreeStyleBuild build2 = r.assertBuildStatusSuccess(b.scheduleBuild2(0));
             ws = build2.getWorkspace();
             assertTrue(!(ws.child("proja").child("subdir").exists()));
 
@@ -1654,32 +1755,35 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         }
     }
 
-    @Bug(16533)
-    public void testPollingRespectExternalsWithRevision() throws Exception {
+    @Issue("JENKINS-16533")
+    @Test
+    public void pollingRespectExternalsWithRevision() throws Exception {
         // trunk has svn:externals="-r 1 ^/vendor vendor" (pinned)
         // latest commit on vendor is r3 (> r1)
         File repo = new CopyExisting(getClass().getResource("JENKINS-16533.zip")).allocate();
         SubversionSCM scm = new SubversionSCM("file://" + repo.toURI().toURL().getPath() + "trunk");
 
         // pinned externals should be recorded with ::p in revisions.txt
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(scm);
-        p.setAssignedLabel(createSlave().getSelfLabel());
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        p.setAssignedLabel(r.createSlave().getSelfLabel());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         // should not find any change (pinned externals should be skipped on poll)
         // fail if it checks the revision of external URL larger than the pinned revision
         assertFalse(p.poll(StreamTaskListener.fromStdout()).hasChanges());
     }
 
-    @Bug(20165)
-    public void testPollingExternalsForFileSvn16() throws Exception {
+    @Issue("JENKINS-20165")
+    @Test
+    public void pollingExternalsForFileSvn16() throws Exception {
         configureSvnWorkspaceFormat(10 /* 1.6 (svn:externals to file) */);
         invokeTestPollingExternalsForFile();
     }
 
-    @Bug(20165)
-    public void testPollingExternalsForFileSvn17() throws Exception {
+    @Issue("JENKINS-20165")
+    @Test
+    public void pollingExternalsForFileSvn17() throws Exception {
         configureSvnWorkspaceFormat(SubversionWorkspaceSelector.WC_FORMAT_17);
         invokeTestPollingExternalsForFile();
     }
@@ -1691,10 +1795,10 @@ public class SubversionSCMTest extends AbstractSubversionTest {
         SubversionSCM scm = new SubversionSCM(path + "trunk");
 
         // first checkout
-        FreeStyleProject p = createFreeStyleProject();
+        FreeStyleProject p = r.createFreeStyleProject();
         p.setScm(scm);
-        p.setAssignedLabel(createSlave().getSelfLabel());
-        assertBuildStatusSuccess(p.scheduleBuild2(0).get());
+        p.setAssignedLabel(r.createSlave().getSelfLabel());
+        r.assertBuildStatusSuccess(p.scheduleBuild2(0).get());
 
         // update target.txt in vendor
         SubversionSCM vendor = new SubversionSCM(path + "vendor");

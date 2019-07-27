@@ -33,7 +33,7 @@
         <f:textbox/>
     </f:entry>
     <f:entry title="${%Credentials}" field="credentialsId">
-        <c:select field="credentialsId"/>
+        <c:select checkMethod="post"/>
     </f:entry>
     <f:entry title="${%Tags filter}" field="tagsFilter">
         <f:textbox/>

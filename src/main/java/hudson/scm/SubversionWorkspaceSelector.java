@@ -23,7 +23,6 @@
  */
 package hudson.scm;
 
-import hudson.model.Hudson;
 import hudson.remoting.Channel;
 import org.tmatesoft.svn.core.SVNException;
 import org.tmatesoft.svn.core.internal.wc.admin.ISVNAdminAreaFactorySelector;
@@ -38,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import jenkins.model.Jenkins;
 import jenkins.security.SlaveToMasterCallable;
 
 /**
@@ -102,20 +102,14 @@ public class SubversionWorkspaceSelector implements ISVNAdminAreaFactorySelector
     public static volatile int workspaceFormat = SVNAdminArea14.WC_FORMAT;
 
     public static void syncWorkspaceFormatFromMaster() {
-        Hudson h = Hudson.getInstance();
-        if (h!=null)
-            workspaceFormat = h.getDescriptorByType(SubversionSCM.DescriptorImpl.class).getWorkspaceFormat();
+        Jenkins j = Jenkins.getInstanceOrNull();
+        if (j!=null)
+            workspaceFormat = j.getDescriptorByType(SubversionSCM.DescriptorImpl.class).getWorkspaceFormat();
         else {
             Channel c = Channel.current();
             if (c!=null)    // just being defensive. cannot be null.
                 try {
-                    workspaceFormat = c.call(new SlaveToMasterCallable<Integer, RuntimeException>() {
-                        private static final long serialVersionUID = 6494337549896104453L;
-
-                        public Integer call()  {
-                            return Hudson.getInstance().getDescriptorByType(SubversionSCM.DescriptorImpl.class).getWorkspaceFormat();
-                        }
-                    });
+                    workspaceFormat = c.call(new GetWorkspaceFormatSlaveToMasterCallable());
                 } catch (IOException e) {
                     LOGGER.log(Level.WARNING, "Failed to retrieve Subversion workspace format",e);
                 } catch (InterruptedException e) {
@@ -138,4 +132,12 @@ public class SubversionWorkspaceSelector implements ISVNAdminAreaFactorySelector
     public static final int OLD_WC_FORMAT_17 = 100;
 
     private static final Logger LOGGER = Logger.getLogger(SubversionWorkspaceSelector.class.getName());
+
+    private static class GetWorkspaceFormatSlaveToMasterCallable extends SlaveToMasterCallable<Integer, RuntimeException> {  // TODO JENKINS-48543 bad design
+        private static final long serialVersionUID = 6494337549896104453L;
+
+        public Integer call()  {
+            return Jenkins.getInstance().getDescriptorByType(SubversionSCM.DescriptorImpl.class).getWorkspaceFormat();
+        }
+    }
 }

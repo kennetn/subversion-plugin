@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.model.AbstractBuild;
+import hudson.model.Run;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.SubversionSCM.ModuleLocation;
 
@@ -58,13 +59,13 @@ public class SubversionSCMUnitTest {
         ModuleLocation[] singleLocation = new ModuleLocation[] {new ModuleLocation("/remotepath", "")};
         when(scm.getLocations(any(EnvVars.class), any(AbstractBuild.class))).thenReturn(singleLocation);
         
-        Map<String, Long> revisions = new HashMap<String, Long>();
+        Map<String, Long> revisions = new HashMap<>();
         revisions.put("/remotepath", 4711L);
         when(scm.parseSvnRevisionFile(any(AbstractBuild.class))).thenReturn(revisions);
         
         // WHEN envVars are build
         AbstractBuild<?,?> build = mock(AbstractBuild.class);
-        Map<String, String> envVars = new HashMap<String, String>();
+        Map<String, String> envVars = new HashMap<>();
         scm.buildEnvVars(build, envVars);
         
         // THEN: we have the (legacy) SVN_URL and SVN_REVISION vars
@@ -87,14 +88,14 @@ public class SubversionSCMUnitTest {
                 new ModuleLocation("/remotepath2", "")};
         when(scm.getLocations(any(EnvVars.class), any(AbstractBuild.class))).thenReturn(locations);
         
-        Map<String, Long> revisions = new HashMap<String, Long>();
+        Map<String, Long> revisions = new HashMap<>();
         revisions.put("/remotepath1", 4711L);
         revisions.put("/remotepath2", 42L);
         when(scm.parseSvnRevisionFile(any(AbstractBuild.class))).thenReturn(revisions);
         
         // WHEN envVars are build
         AbstractBuild<?,?> build = mock(AbstractBuild.class);
-        Map<String, String> envVars = new HashMap<String, String>();
+        Map<String, String> envVars = new HashMap<>();
         scm.buildEnvVars(build, envVars);
         
         // THEN: we have the SVN_URL_n and SVN_REVISION_n vars
@@ -108,6 +109,7 @@ public class SubversionSCMUnitTest {
     private SubversionSCM mockSCMForBuildEnvVars() {
         SubversionSCM scm = mock(SubversionSCM.class);
         doCallRealMethod().when(scm).buildEnvVars(any(AbstractBuild.class), anyMapOf(String.class, String.class));
+        doCallRealMethod().when(scm).buildEnvironment(any(Run.class), anyMapOf(String.class, String.class));
         return scm;
     }
 }

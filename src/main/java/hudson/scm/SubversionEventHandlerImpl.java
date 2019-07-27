@@ -11,6 +11,7 @@
  */
 package hudson.scm;
 
+import jenkins.scm.impl.subversion.RemotableSVNErrorMessage;
 import org.tmatesoft.svn.core.SVNErrorCode;
 import org.tmatesoft.svn.core.SVNErrorMessage;
 import org.tmatesoft.svn.core.SVNException;
@@ -36,9 +37,23 @@ public class SubversionEventHandlerImpl extends SVNEventAdapter {
 
     protected final File baseDir;
 
+    protected final boolean quietOperation;
+
+    /**
+     * @deprecated use {@link #SubversionEventHandlerImpl(PrintStream, File, boolean)}
+     */
+    @Deprecated
     public SubversionEventHandlerImpl(PrintStream out, File baseDir) {
+        this(out, baseDir, false);
+    }
+
+    /**
+     * @since 2.10
+     */
+    public SubversionEventHandlerImpl(PrintStream out, File baseDir, boolean quietOperation) {
         this.out = out;
         this.baseDir = baseDir;
+        this.quietOperation = quietOperation;
     }
 
     public void handleEvent(SVNEvent event, double progress) throws SVNException {
@@ -48,12 +63,16 @@ public class SubversionEventHandlerImpl extends SVNEventAdapter {
             try {
                 path = getRelativePath(file);
             } catch (IOException e) {
-                throw new SVNException(SVNErrorMessage.create(SVNErrorCode.FS_GENERAL, e));
+                throw new SVNException(new RemotableSVNErrorMessage(SVNErrorCode.FS_GENERAL, e));
             }
             path = getLocalPath(path);
         }
 
         SVNEventAction action = event.getAction();
+        if (quietOperation && (action != SVNEventAction.UPDATE_COMPLETED)) {
+            //  Skips logging
+            return;
+        }
 
         {// commit notifications
             if (action == SVNEventAction.COMMIT_ADDED) {
